@@ -5,7 +5,7 @@ import requests
 from peewee import fn
 from telegram import Update, InlineKeyboardButton, InlineKeyboardMarkup
 
-from telegram.ext import (filters as filters,
+from telegram.ext import (Filters as filters,
       Updater, CommandHandler, MessageHandler,
     ConversationHandler, CallbackQueryHandler
 )
