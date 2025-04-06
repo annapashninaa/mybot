@@ -5,9 +5,10 @@ import requests
 from peewee import fn
 from telegram import Update, InlineKeyboardButton, InlineKeyboardMarkup
 from telegram.ext import (
-    Updater, CommandHandler, MessageHandler, Filters,
+    Updater, CommandHandler, MessageHandler,  filters as Filters,
     CallbackContext, ConversationHandler, CallbackQueryHandler
 )
+
 
 from config import TELEGRAM_TOKEN, KINOPOISK_API_KEY
 from database.models import User, SearchHistory
