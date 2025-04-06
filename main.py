@@ -4,9 +4,10 @@ from datetime import datetime
 import requests
 from peewee import fn
 from telegram import Update, InlineKeyboardButton, InlineKeyboardMarkup
-from telegram import (
-    Updater, CommandHandler, MessageHandler,
-    CallbackContext, ConversationHandler, CallbackQueryHandler
+
+from telegram.ext import (filters as filters,
+      Updater, CommandHandler, MessageHandler,
+    ConversationHandler, CallbackQueryHandler
 )
 
 
