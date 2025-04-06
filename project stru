@@ -1,0 +1,14 @@
+movie-bot/
+├── database/
+│   ├── __init__.py
+│   └── models.py
+├── handlers/
+│   ├── __init__.py
+│   └── movie_handlers.py
+├── utils/
+│   ├── __init__.py
+│   └── helpers.py
+├── main.py
+├── config.py
+├── requirements.txt
+└── README.md
