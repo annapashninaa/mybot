@@ -4,7 +4,7 @@ from telegram.ext import (
     Updater, CommandHandler, MessageHandler, Filters, 
     CallbackContext, ConversationHandler
 )
-from config import TOKEN, TMDB_API_KEY
+from config import TELEGRAM_TOKEN, KINOPOISK_API_KEY
 from database.models import User, SearchHistory
 import requests
 
@@ -17,6 +17,7 @@ logger = logging.getLogger(__name__)
 
 # Состояния для ConversationHandler
 TITLE, GENRE, COUNT = range(3)
+KINOPOISK_API_URL = "https://api.kinopoisk.dev/v1.3/movie"
 
 def start(update: Update, context: CallbackContext) -> None:
     user = update.effective_user
@@ -40,16 +41,72 @@ def movie_search(update: Update, context: CallbackContext) -> int:
     update.message.reply_text("Введите название фильма:")
     return TITLE
 
-def process_search(update: Update, context: CallbackContext) -> None:
-    # Реализация поиска через TMDB API
-    pass
+def process_title(update: Update, context: CallbackContext) -> int:
+    context.user_data['title'] = update.message.text
+    update.message.reply_text("Введите жанр (например, комедия):")
+    return GENRE
+
+def process_genre(update: Update, context: CallbackContext) -> int:
+    context.user_data['genre'] = update.message.text
+    update.message.reply_text("Сколько результатов показать? (1-10)")
+    return COUNT
+
+def process_count(update: Update, context: CallbackContext) -> int:
+    try:
+        count = int(update.message.text)
+        if not 1 <= count <= 10:
+            raise ValueError
+    except ValueError:
+        update.message.reply_text("Некорректное число. Введите от 1 до 10.")
+        return COUNT
+
+    headers = {"X-API-KEY": KINOPOISK_API_KEY}
+    params = {
+        "query": context.user_data['title'],
+        "genre.name": context.user_data['genre'],
+        "limit": count
+    }
+
+    response = requests.get(KINOPOISK_API_URL, headers=headers, params=params)
+    
+    if response.status_code == 200:
+        movies = response.json().get('docs', [])
+        for movie in movies:
+            # Сохранение в историю
+            SearchHistory.create(
+                user=User.get(User.user_id == update.effective_user.id),
+                search_date=update.message.date,
+                title=movie.get('name', 'Нет названия'),
+                description=movie.get('description', 'Нет описания'),
+                rating=movie.get('rating', {}).get('kp', 0),
+                year=movie.get('year', 0),
+                genre=', '.join([g['name'] for g in movie.get('genres', [])]),
+                age_rating=movie.get('ageRating', 'Нет данных'),
+                poster_url=movie.get('poster', {}).get('url', '')
+            )
+            
+            # Формирование ответа
+            message = (
+                f"🎬 {movie.get('name', 'Нет названия')}\n"
+                f"📅 Год: {movie.get('year', 'Нет данных')}\n"
+                f"⭐ Рейтинг: {movie.get('rating', {}).get('kp', 'Нет данных')}\n"
+                f"🎭 Жанр: {', '.join([g['name'] for g in movie.get('genres', [])])}\n"
+                f"🔞 Возраст: {movie.get('ageRating', 'Нет данных')}+\n"
+                f"📝 Описание: {movie.get('description', 'Нет описания')}\n"
+                f"🖼 Постер: {movie.get('poster', {}).get('url', '')}"
+            )
+            update.message.reply_text(message)
+    else:
+        update.message.reply_text("Ошибка при поиске фильмов. Попробуйте позже.")
+
+    return ConversationHandler.END
 
 def error_handler(update: Update, context: CallbackContext):
     logger.error(msg="Ошибка обработки запроса:", exc_info=context.error)
     update.message.reply_text("Произошла ошибка. Попробуйте позже.")
 
 def main():
-    updater = Updater(TOKEN)
+    updater = Updater(TELEGRAM_TOKEN)
     dispatcher = updater.dispatcher
 
     # Регистрация обработчиков команд
@@ -64,7 +121,7 @@ def main():
             GENRE: [MessageHandler(Filters.text & ~Filters.command, process_genre)],
             COUNT: [MessageHandler(Filters.text & ~Filters.command, process_count)]
         },
-        fallbacks=[CommandHandler('cancel', cancel)]
+        fallbacks=[]
     )
     dispatcher.add_handler(conv_handler)
     
@@ -75,3 +132,4 @@ def main():
 
 if __name__ == '__main__':
     main()
+
