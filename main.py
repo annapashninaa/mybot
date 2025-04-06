@@ -1,14 +1,16 @@
 import logging
+from datetime import datetime
+
+import requests
+from peewee import fn
 from telegram import Update, InlineKeyboardButton, InlineKeyboardMarkup
 from telegram.ext import (
-    Updater, CommandHandler, MessageHandler, Filters, 
+    Updater, CommandHandler, MessageHandler, Filters,
     CallbackContext, ConversationHandler, CallbackQueryHandler
 )
+
 from config import TELEGRAM_TOKEN, KINOPOISK_API_KEY
 from database.models import User, SearchHistory
-import requests
-from datetime import datetime, date
-from peewee import fn
 
 logging.basicConfig(
     format='%(asctime)s - %(name)s - %(levelname)s - %(message)s',
@@ -20,9 +22,10 @@ logger = logging.getLogger(__name__)
 TITLE, GENRE, COUNT, BUDGET_TYPE, DATE_SELECT = range(5)
 KINOPOISK_API_URL = "https://api.kinopoisk.dev/v1.3/movie"
 
+
 def start(update: Update, context: CallbackContext) -> None:
-    User.get_or_create(
-        user_id=update.effective_user.id, 
+    user, created = User.get_or_create(
+        user_id=update.effective_user.id,
         defaults={'username': update.effective_user.username}
     )
     update.message.reply_text(
@@ -36,20 +39,24 @@ def start(update: Update, context: CallbackContext) -> None:
         "/history - История поиска"
     )
 
+
 # Функции для обработки movie_search (поиск по названию)
 def movie_search(update: Update, context: CallbackContext) -> int:
     update.message.reply_text("📝 Введите название фильма:")
     return TITLE
+
 
 def process_title(update: Update, context: CallbackContext) -> int:
     context.user_data['title'] = update.message.text
     update.message.reply_text("🎭 Введите жанр (например, комедия):")
     return GENRE
 
+
 def process_genre(update: Update, context: CallbackContext) -> int:
     context.user_data['genre'] = update.message.text.lower()
     update.message.reply_text("🔢 Сколько результатов показать? (1-10)")
     return COUNT
+
 
 def process_count(update: Update, context: CallbackContext) -> int:
     try:
@@ -71,7 +78,7 @@ def process_count(update: Update, context: CallbackContext) -> int:
     try:
         response = requests.get(KINOPOISK_API_URL, headers=headers, params=params)
         response.raise_for_status()
-        
+
         movies = response.json().get('docs', [])
         if not movies:
             update.message.reply_text("😞 Ничего не найдено!")
@@ -80,7 +87,7 @@ def process_count(update: Update, context: CallbackContext) -> int:
         for i, movie in enumerate(movies):
             keyboard = [[
                 InlineKeyboardButton("Отметить просмотренным", callback_data=f"watched_{movie['id']}"),
-                InlineKeyboardButton("Следующий", callback_data=f"next_{i+1}")
+                InlineKeyboardButton("Следующий", callback_data=f"next_{i + 1}")
             ]]
 
             update.message.reply_photo(
@@ -106,8 +113,7 @@ def process_count(update: Update, context: CallbackContext) -> int:
                 age_rating=movie.get('ageRating', '0+'),
                 poster_url=movie.get('poster', {}).get('url', '')
             )
-
-            break # Показываем только первый результат для пагинации
+            break  # Показываем только первый результат для пагинации
 
     except requests.exceptions.HTTPError as e:
         logger.error(f"API error: {e}")
@@ -118,13 +124,16 @@ def process_count(update: Update, context: CallbackContext) -> int:
 
     return ConversationHandler.END
 
+
 def low_budget_movie(update: Update, context: CallbackContext) -> None:
     context.user_data['budget_type'] = 'low'
     search_movies_by_budget(update, context)
 
+
 def high_budget_movie(update: Update, context: CallbackContext) -> None:
     context.user_data['budget_type'] = 'high'
     search_movies_by_budget(update, context)
+
 
 def search_movies_by_budget(update: Update, context: CallbackContext):
     headers = {"X-API-KEY": KINOPOISK_API_KEY}
@@ -138,7 +147,7 @@ def search_movies_by_budget(update: Update, context: CallbackContext):
     try:
         response = requests.get(KINOPOISK_API_URL, headers=headers, params=params)
         response.raise_for_status()
-        
+
         movies = response.json().get('docs', [])
         if not movies:
             update.message.reply_text("😞 Ничего не найдено!")
@@ -170,11 +179,13 @@ def search_movies_by_budget(update: Update, context: CallbackContext):
         logger.error(f"Unexpected error: {e}")
         update.message.reply_text("❌ Произошла ошибка. Повторите запрос позже.")
 
+
 def history(update: Update, context: CallbackContext) -> int:
     update.message.reply_text("📅 Введите дату для просмотра истории в формате ГГГГ-ММ-ДД:")
     return DATE_SELECT
 
-def process_date(update: Update, context: CallbackContext) -> None:
+
+def process_date(update: Update, context: CallbackContext) -> int:
     try:
         selected_date = datetime.strptime(update.message.text, '%Y-%m-%d').date()
     except ValueError:
@@ -203,6 +214,7 @@ def process_date(update: Update, context: CallbackContext) -> None:
 
     return ConversationHandler.END
 
+
 def handle_callback_query(update: Update, context: CallbackContext):
     query = update.callback_query
     query.answer()
@@ -225,9 +237,11 @@ def handle_callback_query(update: Update, context: CallbackContext):
         # Здесь можно реализовать логику показа следующего результата из context.user_data
         query.edit_message_text(f"Показан результат {index}.")  # Заглушка
 
+
 def error_handler(update: Update, context: CallbackContext):
     logger.error(msg="Ошибка:", exc_info=context.error)
     update.message.reply_text("❌ Произошла ошибка. Повторите запрос позже.")
+
 
 def main():
     updater = Updater(TELEGRAM_TOKEN)
@@ -251,7 +265,7 @@ def main():
         states={
             DATE_SELECT: [MessageHandler(Filters.text & ~Filters.command, process_date)]
         },
-        fallbacks=[]
+        fallbacks=[CommandHandler('cancel', cancel)]  # Добавлен обработчик cancel
     )
     dispatcher.add_handler(history_conv_handler)
 
@@ -268,5 +282,12 @@ def main():
     updater.start_polling()
     updater.idle()
 
+
+def cancel(update: Update, context: CallbackContext) -> int:
+    update.message.reply_text("Действие отменено.")
+    return ConversationHandler.END
+
+
 if __name__ == '__main__':
     main()
+
